@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>高度化PICS BLE ビューア</title>
+<meta name="description" content="高度化PICS（BLE信号機）のBLEアドバタイズをWeb Bluetoothで受信し、歩行者信号を可視化する受信専用ツール。">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PICSビューア">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--ink:#1b1e24;--muted:#667085;--line:#dde1e7;--red:#d92d20;--green:#12805c;--amber:#b54708;--blue:#175cd3;--radius:14px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;line-height:1.6}
+header{background:#111827;color:#fff;padding:18px 16px}
+header h1{margin:0;font-size:20px;line-height:1.3}
+header p{margin:6px 0 0;color:#d0d5dd;font-size:13px}
+.wrap{max-width:1080px;margin:0 auto;padding:14px 14px 40px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:12px 0}
+h2{font-size:16px;margin:0 0 10px}
+h3{font-size:14px;margin:16px 0 8px}
+p.small,.small{font-size:12.5px;color:var(--muted)}
+.badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;background:#eef2f6;color:#344054;border:1px solid var(--line)}
+.badge.live{background:#ecfdf3;color:#067647;border-color:#a6f4c5}
+.badge.demo{background:#fffaeb;color:#b54708;border-color:#fedf89}
+.badge.err{background:#fef3f2;color:#b42318;border-color:#fecdca}
+button{border:1px solid #cfd4dc;background:#fff;border-radius:10px;padding:10px 14px;font-size:14px;font-weight:700;cursor:pointer}
+button.primary{background:#175cd3;border-color:#175cd3;color:#fff}
+button.danger{background:#fff;border-color:#fecdca;color:#b42318}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:active{transform:translateY(1px)}
+input[type=text],input[type=number],select,textarea{border:1px solid #cfd4dc;border-radius:8px;padding:8px 10px;font-size:14px;width:100%;background:#fff;color:var(--ink)}
+label{display:block;font-size:13px;font-weight:700;margin:8px 0 4px}
+.grid{display:grid;gap:12px}
+@media(min-width:760px){.grid.two{grid-template-columns:1fr 1fr}.grid.three{grid-template-columns:repeat(3,1fr)}}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row>*{flex:0 0 auto}
+.check{display:flex;gap:8px;align-items:flex-start;font-weight:400;font-size:14px}
+.check input{width:auto;margin-top:3px}
+.stat{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+@media(min-width:760px){.stat{grid-template-columns:repeat(5,1fr)}}
+.stat div{border:1px solid var(--line);border-radius:10px;padding:10px}
+.stat b{display:block;font-size:22px;line-height:1.2}
+.stat span{font-size:12px;color:var(--muted)}
+/* signal lamps */
+.lamps{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(min-width:760px){.lamps{grid-template-columns:repeat(3,1fr)}}
+.lamp{border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;background:#fbfcfd}
+.lamp .face{width:74px;height:74px;border-radius:50%;margin:6px auto;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:800;color:#fff;background:#98a2b3}
+.lamp.red .face{background:var(--red)}
+.lamp.green .face{background:var(--green)}
+.lamp.blinkgreen .face{background:#12b76a;animation:blink 1s steps(2,start) infinite}
+.lamp.paused .face{animation:none;opacity:.65}
+.lamp.unknown .face{background:#98a2b3}
+@keyframes blink{50%{opacity:.25}}
+.lamp .sig{font-weight:800;font-size:16px}
+.lamp .rem{font-size:13px;color:var(--muted)}
+.lamp .dir{font-size:12px;color:var(--muted)}
+.stale{border-color:#fedf89;background:#fffaeb}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:7px 6px;text-align:left;vertical-align:top;word-break:break-word}
+th{background:#f9fafb}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;word-break:break-all}
+.hexbytes{display:flex;flex-wrap:wrap;gap:4px}
+.hexbytes span{border:1px solid var(--line);border-radius:6px;padding:3px 6px;font-family:ui-monospace,monospace;font-size:12px;background:#f9fafb}
+.hexbytes span.hl{background:#fef0c7;border-color:#fedf89;font-weight:700}
+pre{background:#0f172a;color:#e5e7eb;border-radius:10px;padding:12px;overflow:auto;font-size:12.5px;white-space:pre-wrap;word-break:break-all}
+canvas{width:100%;height:110px;border:1px solid var(--line);border-radius:10px;background:#fff}
+details{border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0}
+summary{cursor:pointer;font-weight:700}
+.kv{display:grid;grid-template-columns:130px 1fr;gap:6px 10px;font-size:14px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;word-break:break-word}
+.notice{border-left:4px solid var(--amber);background:#fffaeb;padding:10px 12px;border-radius:8px;font-size:13px}
+.warn{border-left:4px solid var(--red);background:#fef3f2;padding:10px 12px;border-radius:8px;font-size:13px}
+.okbox{border-left:4px solid var(--green);background:#ecfdf3;padding:10px 12px;border-radius:8px;font-size:13px}
+a{color:var(--blue)}
+footer{font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>高度化PICS BLE ビューア</h1>
+  <p>BLE信号機（高度化PICS）のアドバタイズを、Web Bluetoothで受信して可視化する受信専用ツール。送信・接続・信号機の操作はしません。</p>
+</header>
+<main class="wrap">
+
+<section class="card" aria-label="対応環境">
+  <h2>対応環境と受信の可否</h2>
+  <div id="envBadges" class="row"></div>
+  <p class="small" id="envText">環境を確認しています。</p>
+  <div id="iosNotice" class="warn" hidden></div>
+  <div class="notice">
+    実機受信には、実験的な Web Bluetooth Scanning API に対応した <strong>Chrome</strong> と、<span class="mono">chrome://flags/#enable-experimental-web-platform-features</span> の有効化が必要です。HTTPS（または localhost）で開いてください。Safari / Firefox では実機受信はできません。iPhone・iPad では Safari だけでなく Chrome など他のブラウザも中身は WebKit のため、通常は実機受信できません。その場合はデモと16進テストで画面を確認できます。Mac では「システム設定 → プライバシーとセキュリティ → Bluetooth」で Chrome の許可も必要です。
+  </div>
+</section>
+
+<section class="card" aria-label="受信コントロール">
+  <h2>受信コントロール <span id="modeBadge" class="badge">停止中</span></h2>
+  <div class="grid two">
+    <div>
+      <label>受信方式</label>
+      <label class="check"><input type="radio" name="mode" value="lescan" checked> 周囲をまとめてスキャン（requestLEScan）</label>
+      <label class="check"><input type="radio" name="mode" value="watch"> デバイスを選んで広告を監視（watchAdvertisements）</label>
+      <label>対象</label>
+      <label class="check"><input type="radio" name="target" value="pics" checked> PICS候補のみ（メーカーID 0x01CE）</label>
+      <label class="check"><input type="radio" name="target" value="all"> すべてのデバイス（受信確認・デバッグ用）</label>
+    </div>
+    <div>
+      <label class="check"><input type="checkbox" id="debugMode"> デバッグモード（PICS以外も記録・表示する）</label>
+      <label class="check"><input type="checkbox" id="voiceMode"> 信号が変わったら音声で知らせる（青・点滅青・赤）</label>
+      <label class="check"><input type="checkbox" id="vibrateMode"> 信号が変わったら振動させる（対応端末のみ）</label>
+      <label for="rssiMin">RSSIしきい値（これより弱い電波は一覧から除外）</label>
+      <div class="row"><input type="range" id="rssiMin" min="-95" max="-30" value="-90" step="1" style="flex:1"><output id="rssiMinOut">-90 dBm</output></div>
+    </div>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <button class="primary" id="startBtn">スキャン開始</button>
+    <button id="stopBtn" disabled>停止</button>
+    <button id="demoBtn">デモを試す</button>
+    <button id="clearBtn">ログを消去</button>
+    <button id="exportJsonBtn">JSONで保存</button>
+    <button id="exportCsvBtn">履歴をCSVで保存</button>
+  </div>
+  <p class="small" id="scanMsg">開始するとブラウザの許可ダイアログが出ます。スキャン開始の成功と、実際にアドバタイズを受信できたことは別に表示します。</p>
+  <div id="scanError" class="warn" hidden></div>
+</section>
+
+<section class="card" aria-label="統計">
+  <h2>受信サマリ</h2>
+  <div class="stat">
+    <div><b id="stEvents">0</b><span>受信イベント</span></div>
+    <div><b id="stPics">0</b><span>PICS（0x01CE）イベント</span></div>
+    <div><b id="stDevices">0</b><span>デバイス数</span></div>
+    <div><b id="stX">0</b><span>交差点数</span></div>
+    <div><b id="stBad">0</b><span>解析できなかった件数</span></div>
+  </div>
+  <p class="small" id="lastEventText">まだ受信していません。</p>
+</section>
+
+<section class="card" aria-label="交差点の信号表示">
+  <h2>交差点の信号</h2>
+  <label for="xSelect">交差点を選択</label>
+  <select id="xSelect"><option value="">（まだ交差点を受信していません）</option></select>
+  <div id="selectedEmpty" class="small">PICS信号機の近くでスキャンするか、デモを試してください。交差点は Type 0（名称）・Type 1（位置）・Type 2（信号）のパケットを組み合わせて表示します。どれか1種類だけでも、届いた情報だけを表示します。</div>
+  <div id="selectedBox" hidden>
+    <div class="row" style="margin:8px 0"><span id="freshBadge" class="badge">—</span><span id="xTitle" style="font-weight:800;font-size:18px"></span></div>
+    <dl class="kv">
+      <dt>交差点ID</dt><dd class="mono" id="xId">—</dd>
+      <dt>デバイスID</dt><dd class="mono" id="xDevice">—</dd>
+      <dt>位置</dt><dd id="xPos">—</dd>
+      <dt>RSSI</dt><dd id="xRssi">—</dd>
+      <dt>最終受信</dt><dd id="xLast">—</dd>
+      <dt>受信内訳</dt><dd id="xCounts">—</dd>
+    </dl>
+    <h3>歩行者信号（最大6灯）</h3>
+    <p class="small">信号1・2の「東西」「南北」は目安の呼び方です。実際の方角は設置場所によります。残り値は単位を秒と断定しません。横断できるかどうかは、必ず現地の信号機で確認してください。</p>
+    <div class="lamps" id="lamps" aria-live="polite"></div>
+    <h3>信号の変化（直近60秒）</h3>
+    <canvas id="timeline" width="900" height="110"></canvas>
+    <h3>RSSIの推移</h3>
+    <canvas id="rssiChart" width="900" height="110"></canvas>
+    <h3>信号の変化履歴</h3>
+    <div id="historyBox"></div>
+  </div>
+</section>
+
+<section class="card" aria-label="最新パケット">
+  <h2>最新パケットの解析</h2>
+  <div id="latestEmpty" class="small">まだPICSパケットを受信していません。</div>
+  <div id="latestBox" hidden>
+    <div class="hexbytes" id="hexBytes"></div>
+    <h3>解析結果</h3>
+    <pre id="latestJson">{}</pre>
+    <h3>参考候補（確定情報ではありません）</h3>
+    <p class="small">共通ヘッダーの詳細は公開規格にありません。緯度・経度らしい32ビット値や、読める文字列が別のオフセットにないかを機械的に探した結果です。合致しても、それが正式な意味だとは断定できません。設定でオフセットを変えて再確認してください。</p>
+    <div id="candidates" class="small">—</div>
+  </div>
+  <details>
+    <summary>解析設定（オフセット調整・方向名）</summary>
+    <p class="small">UTMS協会の「BLE路側機－携帯電話間通信 アプリケーション規格」は一般公開されていません。ここでは公開されている ble-pics-viewer の README に基づく意味（Type 0/1/2、信号の下位4ビット）を使い、バイト位置だけを調整できるようにしています。既定値はこのアプリ内部のレイアウトです。実機で名称・位置・信号が合わない場合は、ここでオフセットを変えてください。設定はこのブラウザにだけ保存します。</p>
+    <div class="grid three">
+      <div><label for="optType">Typeのオフセット</label><input type="number" id="optType" min="0" max="8" value="0"></div>
+      <div><label for="optId">交差点IDのオフセット</label><input type="number" id="optId" min="0" max="8" value="1"></div>
+      <div><label for="optIdLen">交差点IDの長さ（バイト）</label><input type="number" id="optIdLen" min="1" max="4" value="2"></div>
+      <div><label for="optPayload">データ部のオフセット</label><input type="number" id="optPayload" min="0" max="16" value="3"></div>
+      <div><label for="optEndian">緯度・経度の並び</label><select id="optEndian"><option value="big">ビッグエンディアン</option><option value="little">リトルエンディアン</option></select></div>
+      <div><label for="optDiv">緯度・経度の除数</label><select id="optDiv"><option value="1000000">1,000,000</option><option value="10000000">10,000,000</option></select></div>
+    </div>
+    <h3>方向名（信号1〜6）</h3>
+    <div class="grid three" id="dirInputs"></div>
+    <div class="row" style="margin-top:10px"><button id="applyParserBtn">設定を適用</button><button id="resetParserBtn">既定に戻す</button></div>
+    <p class="small" id="parserMsg"></p>
+  </details>
+  <details>
+    <summary>16進テスト（受信した生データや公開例を貼って解析する）</summary>
+    <label for="hexInput">メーカーID 0x01CE のデータ部（16進、スペース区切り可）</label>
+    <textarea id="hexInput" rows="3" placeholder="例: 02 12 34 13 00 00 00 00 00 00"></textarea>
+    <div class="row" style="margin-top:8px"><button id="hexTestBtn">解析する</button><button id="hexSampleBtn">デモ用サンプルを入れる</button><button id="hexExampleBtn">公開例（Daily Portal Z）を入れる</button></div>
+    <pre id="hexResult">まだテストしていません。</pre>
+  </details>
+</section>
+
+<section class="card" aria-label="デバイスとログ">
+  <h2>デバイス一覧と受信ログ</h2>
+  <p class="small">デバイスIDはブラウザが付ける識別子で、MACアドレスではありません。生データはメモリ内のみで処理し、外部へ送信しません。</p>
+  <div style="overflow:auto"><table>
+    <thead><tr><th>デバイス</th><th>RSSI</th><th>メーカーID</th><th>受信数</th><th>最終受信</th></tr></thead>
+    <tbody id="deviceRows"><tr><td colspan="5">—</td></tr></tbody>
+  </table></div>
+  <h3>最新イベント（最大20件）</h3>
+  <div id="eventLog"></div>
+</section>
+
+<section class="card" aria-label="仕様メモと注意">
+  <h2>仕様メモと注意</h2>
+  <ul>
+    <li>メーカーID <span class="mono">0x01CE</span>（HOUWA SYSTEM DESIGN, k.k.）の <span class="mono">manufacturerData</span> をPICSとして扱います。</li>
+    <li>Type 0：交差点の識別名称（UTF-8、最大14バイト）。Type 1：緯度・経度（符号付き32ビット、除数 1,000,000）。Type 2：最大6灯の歩行者信号と残り値。</li>
+    <li>信号は下位4ビットで <span class="mono">0:信号なし / 1:赤 / 2:点滅青 / 3:青 / 4:None</span> と解釈します。残り値は上位4ビットが0〜7なら1を加えた値、8以上なら不明（—）とします。</li>
+    <li>信号データを5秒以上受信できない場合は「更新なし」と表示し、点滅を止めます。停止後は「最終受信値」と明示します。</li>
+    <li>このアプリは受信専用です。青信号の延長や押しボタン操作などの送信機能はありません。</li>
+  </ul>
+  <p class="small">参考：警察庁「高度化PICS」、ble-pics-viewer（GitHub, MIT）の公開README、Chrome の Web Bluetooth Scanning / Watch Advertisements サンプル。UTMS協会の詳細規格は非公開のため、バイト位置の解釈は実機での検証が必要です。受信対象は公共インフラから不特定多数へ送信される公開電波で、個人を識別できる情報は含まれません。</p>
+</section>
+
+</main>
+<footer class="wrap">高度化PICS BLE ビューア — 受信専用・データはこのブラウザのメモリ内のみで処理します。</footer>
+<script>
+'use strict';
+/* ============ Parser (DOMに依存しない) ============ */
+const PICS_COMPANY_ID = 0x01CE;
+const SIGNAL_LABELS = {0:'信号なし',1:'赤',2:'点滅青',3:'青',4:'None'};
+const SIGNAL_CLASSES = {0:'unknown',1:'red',2:'blinkgreen',3:'green',4:'unknown'};
+const DEFAULT_PARSER = {typeOffset:0, idOffset:1, idLength:2, payloadOffset:3, coordEndian:'big', coordDivisor:1000000};
+const DEFAULT_DIRS = ['東西','南北','東西2','南北2','方向5','方向6'];
+
+function toHex(bytes){return Array.from(bytes,function(b){return b.toString(16).padStart(2,'0');}).join(' ');}
+function toHexCompact(bytes){return Array.from(bytes,function(b){return b.toString(16).padStart(2,'0');}).join('');}
+function parseHexInput(text){
+  const cleaned = String(text||'').replace(/0x/gi,' ').replace(/[^0-9a-fA-F]/g,'');
+  if(!cleaned || cleaned.length % 2 !== 0) return {ok:false, reason:'16進の桁数が奇数か、文字がありません。'};
+  const out = new Uint8Array(cleaned.length/2);
+  for(let i=0;i<out.length;i++) out[i]=parseInt(cleaned.slice(i*2,i*2+2),16);
+  return {ok:true, bytes:out};
+}
+function readInt32(bytes, off, endian){
+  if(off+4>bytes.length) return null;
+  const v = new DataView(bytes.buffer, bytes.byteOffset+off, 4);
+  return endian==='little' ? v.getInt32(0,true) : v.getInt32(0,false);
+}
+function decodeName(bytes){
+  // 末尾の 0x00 / 0xFF パディングを除く
+  let end = bytes.length;
+  while(end>0 && (bytes[end-1]===0x00 || bytes[end-1]===0xff)) end--;
+  const sliced = bytes.slice(0,end);
+  try{ return new TextDecoder('utf-8',{fatal:true}).decode(sliced); }
+  catch(e){
+    try{ return new TextDecoder('utf-8').decode(sliced); }catch(_){ return ''; }
+  }
+}
+/**
+ * PICSパケット解析。opts は設定パネルで調整可能。
+ * 戻り値: {ok, type, intersectionId, name?, lat?, lon?, signals?, rawHex, reason?}
+ * signals: [{state, label, remaining}] remaining は不明なら null
+ */
+function parsePicsPayload(input, opts){
+  const o = Object.assign({}, DEFAULT_PARSER, opts||{});
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input||[]);
+  const rawHex = toHex(bytes);
+  if(bytes.length < 3) return {ok:false, type:null, intersectionId:null, rawHex, reason:'パケットが短すぎます（3バイト未満）。'};
+  if(o.typeOffset>=bytes.length) return {ok:false, type:null, intersectionId:null, rawHex, reason:'Typeのオフセットが範囲外です。'};
+  const type = bytes[o.typeOffset];
+  const idBytes = bytes.slice(o.idOffset, o.idOffset+o.idLength);
+  const intersectionId = idBytes.length ? toHexCompact(idBytes) : null;
+  const payload = bytes.slice(o.payloadOffset);
+  const base = {ok:true, type, intersectionId, rawHex, payloadHex:toHex(payload)};
+  if(type===0){
+    const nameBytes = payload.slice(0,14);
+    return Object.assign(base,{name:decodeName(nameBytes)});
+  }
+  if(type===1){
+    if(payload.length<8) return Object.assign(base,{ok:false, reason:'Type 1 は緯度・経度に8バイト必要です。'});
+    const latRaw = readInt32(payload,0,o.coordEndian);
+    const lonRaw = readInt32(payload,4,o.coordEndian);
+    return Object.assign(base,{lat:latRaw/o.coordDivisor, lon:lonRaw/o.coordDivisor, latRaw, lonRaw});
+  }
+  if(type===2){
+    if(payload.length<1) return Object.assign(base,{ok:false, reason:'Type 2 に信号データがありません。'});
+    const signals=[];
+    for(let i=0;i<6;i++){
+      const b = i<payload.length ? payload[i] : null;
+      if(b===null){ signals.push({state:null,label:'未受信',remaining:null}); continue; }
+      const state = b & 0x0f;
+      const high = (b>>4)&0x0f;
+      signals.push({state, label: SIGNAL_LABELS[state]!==undefined?SIGNAL_LABELS[state]:'未知('+state+')', remaining: high<=7?high+1:null, raw:b});
+    }
+    return Object.assign(base,{signals});
+  }
+  return Object.assign(base,{unknown:true, reason:'未知のメッセージ種別です。共通ヘッダーのみ表示します。'});
+}
+function findCandidates(bytes){
+  const out=[];
+  for(let i=0;i+8<=bytes.length;i++){
+    const lat = readInt32(bytes,i,'big')/1000000;
+    const lon = readInt32(bytes,i+4,'big')/1000000;
+    if(lat>=20&&lat<=46&&lon>=122&&lon<=146) out.push('緯度・経度らしい値（BE, /1e6）: オフセット '+i+' → '+lat.toFixed(6)+', '+lon.toFixed(6));
+    const latLE = readInt32(bytes,i,'little')/1000000;
+    const lonLE = readInt32(bytes,i+4,'little')/1000000;
+    if(latLE>=20&&latLE<=46&&lonLE>=122&&lonLE<=146) out.push('緯度・経度らしい値（LE, /1e6）: オフセット '+i+' → '+latLE.toFixed(6)+', '+lonLE.toFixed(6));
+  }
+  // 読める文字列
+  let run=[];
+  const flush=function(){
+    if(run.length>=3){
+      try{
+        const s=new TextDecoder('utf-8',{fatal:true}).decode(new Uint8Array(run));
+        if(/^[\u0020-\u007e\u3040-\u30ff\u4e00-\u9faf]+$/.test(s)) out.push('読める文字列: オフセット '+(run.start)+' → 「'+s+'」');
+      }catch(e){}
+    }
+    run=[]; run.start=0;
+  };
+  run.start=0;
+  for(let i=0;i<bytes.length;i++){
+    const b=bytes[i];
+    const printable = (b>=0x20&&b<0x7f)||b>=0x80;
+    if(printable){ if(run.length===0) run.start=i; run.push(b); } else flush();
+  }
+  flush();
+  return out;
+}
+function buildDemoPayload(type, idBytes, payloadBytes){
+  const out=new Uint8Array(3+payloadBytes.length);
+  out[0]=type; out.set(idBytes,1); out.set(payloadBytes,3);
+  return out;
+}
+function encodeInt32BE(v){
+  const buf=new ArrayBuffer(4); new DataView(buf).setInt32(0,v,false); return new Uint8Array(buf);
+}
+function encodeSignals(states, remainings){
+  const out=new Uint8Array(6);
+  for(let i=0;i<6;i++){
+    const high = remainings[i]==null?8:Math.max(0,Math.min(7,remainings[i]-1));
+    out[i]=((high&0x0f)<<4)|(states[i]&0x0f);
+  }
+  return out;
+}
+
+/* ============ State ============ */
+const state={
+  running:false, mode:'lescan', demo:false, debug:false,
+  scan:null, watchDevice:null, watchAbort:null, scanCheckTimer:null,
+  parser:Object.assign({},DEFAULT_PARSER),
+  dirs:DEFAULT_DIRS.slice(),
+  intersections:new Map(), devices:new Map(), events:[],
+  stats:{events:0,pics:0,bad:0},
+  selectedKey:null, lastPicsBytes:null, lastPicsInfo:null,
+  voice:false, vibrate:false, rssiMin:-90,
+  demoTimer:null, demoTick:0
+};
+function loadSettings(){
+  try{
+    const raw=localStorage.getItem('pics-ble-viewer-v1');
+    if(!raw) return;
+    const s=JSON.parse(raw);
+    if(s.parser) state.parser=Object.assign({},DEFAULT_PARSER,s.parser);
+    if(Array.isArray(s.dirs)&&s.dirs.length===6) state.dirs=s.dirs;
+  }catch(e){}
+}
+function saveSettings(){
+  try{ localStorage.setItem('pics-ble-viewer-v1', JSON.stringify({parser:state.parser, dirs:state.dirs})); }catch(e){}
+}
+function keyFor(deviceId, intersectionId){ return deviceId+'|'+(intersectionId||'unknown'); }
+function getOrCreateIntersection(deviceId, deviceName, intersectionId){
+  const key=keyFor(deviceId,intersectionId);
+  let x=state.intersections.get(key);
+  if(!x){
+    x={key, deviceId, deviceName:deviceName||'', intersectionId, name:'', lat:null, lon:null,
+       signals:null, lastSignalAt:0, counts:{0:0,1:0,2:0,other:0}, total:0,
+       firstSeen:Date.now(), lastSeen:0, lastRssi:null, rssiHist:[], history:[], lastBytes:null};
+    state.intersections.set(key,x);
+    if(state.intersections.size>100){
+      const firstKey=state.intersections.keys().next().value;
+      state.intersections.delete(firstKey);
+    }
+  }
+  return x;
+}
+function notifySignalChange(x, prevSignals){
+  if(!state.voice && !state.vibrate) return;
+  if(!prevSignals || !x.signals) return;
+  const changed = x.signals.some(function(s,i){ return prevSignals[i] && prevSignals[i].state!==s.state; });
+  if(!changed) return;
+  const s1=x.signals[0];
+  if(state.vibrate && navigator.vibrate){ try{ navigator.vibrate(s1&&s1.state===3?[80,40,80]:[120]); }catch(e){} }
+  if(state.voice && 'speechSynthesis' in window){
+    try{
+      const word = s1? (s1.state===3?'青になりました':s1.state===2?'点滅青になりました':s1.state===1?'赤になりました':null):null;
+      if(word){ speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance((x.name||'交差点')+'、'+word)); }
+    }catch(e){}
+  }
+}
+function ingestPics(deviceId, deviceName, rssi, bytes, source, when){
+  const parsed=parsePicsPayload(bytes, state.parser);
+  const t = when||Date.now();
+  if(!parsed.ok){ state.stats.bad++; return {parsed, intersection:null}; }
+  const x=getOrCreateIntersection(deviceId, deviceName, parsed.intersectionId);
+  const prevSignals = x.signals ? x.signals.map(function(s){return {state:s.state};}) : null;
+  x.lastSeen=t; x.lastRssi=rssi; x.total++;
+  x.rssiHist.push({t:t, rssi:rssi}); if(x.rssiHist.length>120) x.rssiHist.shift();
+  x.lastBytes=bytes.slice();
+  if(parsed.type===0){ x.counts[0]++; if(parsed.name) x.name=parsed.name; }
+  else if(parsed.type===1){ x.counts[1]++; if(parsed.lat!=null&&isFinite(parsed.lat)) x.lat=parsed.lat; if(parsed.lon!=null&&isFinite(parsed.lon)) x.lon=parsed.lon; }
+  else if(parsed.type===2){
+    x.counts[2]++; x.signals=parsed.signals; x.lastSignalAt=t;
+    x.history.push({t:t, signals:parsed.signals.map(function(s){return s.state;}), rssi:rssi});
+    if(x.history.length>200) x.history.shift();
+    notifySignalChange(x, prevSignals);
+  } else { x.counts.other++; }
+  state.lastPicsBytes=bytes.slice(); state.lastPicsInfo=parsed;
+  if(!state.selectedKey) state.selectedKey=x.key;
+  return {parsed, intersection:x};
+}
+function recordDevice(deviceId, deviceName, rssi, companyIds, when){
+  const t=when||Date.now();
+  let d=state.devices.get(deviceId);
+  if(!d){ d={id:deviceId, name:deviceName||'', rssi:rssi, companyIds:[], count:0, lastSeen:t}; state.devices.set(deviceId,d); }
+  d.count++; d.lastSeen=t; d.rssi=rssi; if(deviceName) d.name=deviceName;
+  companyIds.forEach(function(id){ if(d.companyIds.indexOf(id)<0) d.companyIds.push(id); });
+  if(state.devices.size>100){
+    // 古いものから削除（簡易）
+    let oldest=null, oldestT=Infinity;
+    state.devices.forEach(function(v,k){ if(v.lastSeen<oldestT){oldestT=v.lastSeen; oldest=k;} });
+    if(oldest && state.devices.size>100) state.devices.delete(oldest);
+  }
+  return d;
+}
+function handleAdvertisement(ev){
+  // ev: {deviceId, deviceName, rssi, txPower, manufacturerData:[[id,Uint8Array]], serviceUuids:[], source}
+  const t=Date.now();
+  state.stats.events++;
+  const companyIds=ev.manufacturerData.map(function(e){return e[0];});
+  const hasPics = companyIds.indexOf(PICS_COMPANY_ID)>=0;
+  if(hasPics) state.stats.pics++;
+  if(ev.rssi!=null && ev.rssi < state.rssiMin && !hasPics){
+    // しきい値以下はデバイス一覧に入れない（PICSは常に対象）
+  } else {
+    recordDevice(ev.deviceId, ev.deviceName, ev.rssi, companyIds, t);
+  }
+  const entry={t:t, deviceId:ev.deviceId, deviceName:ev.deviceName, rssi:ev.rssi, companyIds:companyIds, hasPics:hasPics, source:ev.source||'bluetooth'};
+  if(hasPics){
+    const picsEntry=ev.manufacturerData.filter(function(e){return e[0]===PICS_COMPANY_ID;})[0];
+    entry.hex=toHex(picsEntry[1]);
+    const res=ingestPics(ev.deviceId, ev.deviceName, ev.rssi, picsEntry[1], ev.source, t);
+    entry.parsed=res.parsed;
+    if(!res.parsed.ok) entry.parseError=res.parsed.reason;
+  } else if(state.debug){
+    const first=ev.manufacturerData[0];
+    entry.hex=first?toHex(first[1]):'';
+  }
+  if(hasPics || state.debug){
+    state.events.unshift(entry);
+    if(state.events.length>20) state.events.pop();
+  }
+  if(typeof renderAll==='function') renderAll();
+}
+</script>
+<script>
+'use strict';
+/* ============ DOM / UI ============ */
+function el(id){return document.getElementById(id);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function fmtTime(t){return new Date(t).toLocaleTimeString('ja-JP',{hour12:false});}
+function fmtAge(t){
+  if(!t) return '—';
+  const s=Math.max(0,Math.round((Date.now()-t)/1000));
+  return s<60 ? s+'秒前' : Math.floor(s/60)+'分'+(s%60)+'秒前';
+}
+function signalClass(s){ return s==null||s.state==null ? 'unknown' : (SIGNAL_CLASSES[s.state]||'unknown'); }
+function signalText(s){ return s==null||s.state==null ? '未受信' : (SIGNAL_LABELS[s.state]!==undefined?SIGNAL_LABELS[s.state]:'未知('+s.state+')'); }
+
+let lastRender=0, renderPending=false;
+function renderAll(force){
+  const now=Date.now();
+  if(!force && now-lastRender<400){
+    if(!renderPending){ renderPending=true; setTimeout(function(){renderPending=false; renderAll(true);},450); }
+    return;
+  }
+  lastRender=now;
+  renderStats(); renderSelect(); renderSelected(); renderDevices(); renderEvents(); renderLatest();
+}
+function renderEnv(){
+  const badges=[];
+  const hasBT = !!(navigator.bluetooth);
+  const hasScan = !!(navigator.bluetooth && navigator.bluetooth.requestLEScan);
+  const hasWatch = (typeof BluetoothDevice!=='undefined' && 'watchAdvertisements' in BluetoothDevice.prototype);
+  const secure = window.isSecureContext;
+  badges.push('<span class="badge '+(secure?'live':'err')+'">HTTPS/localhost: '+(secure?'OK':'NG')+'</span>');
+  badges.push('<span class="badge '+(hasBT?'live':'err')+'">Web Bluetooth: '+(hasBT?'あり':'なし')+'</span>');
+  badges.push('<span class="badge '+(hasScan?'live':'err')+'">requestLEScan: '+(hasScan?'あり':'なし')+'</span>');
+  badges.push('<span class="badge '+(hasWatch?'live':'err')+'">watchAdvertisements: '+(hasWatch?'あり':'なし')+'</span>');
+  const hasBeacio = !!(navigator.beacio || (typeof window!=='undefined' && window.beacio));
+  if(hasBeacio) badges.push('<span class="badge live">beacio: 検出</span>');
+  el('envBadges').innerHTML=badges.join('');
+  el('envText').textContent='ブラウザ: '+navigator.userAgent+' ／ APIがあってもOSやアダプタ側で未実装の場合があります。その場合は開始時のエラーを確認してください。';
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  const iosBox=el('iosNotice');
+  if(isIOS){
+    iosBox.hidden=false;
+    iosBox.innerHTML = hasBT
+      ? '<strong>iPhone / iPad で開いています。</strong>Web Bluetooth のAPIが見えています（拡張機能などが補っている可能性があります）。PICSのアドバタイズ受信まで動くかは未検証です。動かない場合は Android の Chrome か、PCの Chrome を使ってください。'
+      : '<strong>iPhone / iPad の Safari・Chrome では実機受信できません。</strong>iOSのブラウザは中身が WebKit で、Web Bluetooth がありません。Chromeに変えても同じです。現地で使うなら Android の Chrome か PCの Chrome が確実です。サードパーティ製の Web Bluetooth 対応ブラウザ／Safari拡張機能（Bluefy、WebBLE / beacio など）を使う方法もありますが、このアプリでのPICS受信は未検証です。';
+  } else if(iosBox){ iosBox.hidden=true; }
+  el('startBtn').disabled = state.demo ? false : false;
+}
+function renderStats(){
+  el('stEvents').textContent=state.stats.events;
+  el('stPics').textContent=state.stats.pics;
+  el('stDevices').textContent=state.devices.size;
+  el('stX').textContent=state.intersections.size;
+  el('stBad').textContent=state.stats.bad;
+  el('lastEventText').textContent = state.stats.events? ('最終イベント: '+fmtTime(state.events[0]?state.events[0].t:Date.now())) : 'まだ受信していません。';
+}
+function selectedIntersection(){
+  if(!state.selectedKey) return null;
+  return state.intersections.get(state.selectedKey)||null;
+}
+function renderSelect(){
+  const sel=el('xSelect');
+  const prev=sel.value;
+  const items=Array.from(state.intersections.values()).sort(function(a,b){return b.lastSeen-a.lastSeen;});
+  if(!items.length){ sel.innerHTML='<option value="">（まだ交差点を受信していません）</option>'; return; }
+  sel.innerHTML=items.map(function(x){
+    const label=(x.name||'名称未受信')+'（ID '+x.intersectionId+'・'+(x.lastRssi!=null?x.lastRssi+' dBm':'—')+'）';
+    return '<option value="'+esc(x.key)+'">'+esc(label)+'</option>';
+  }).join('');
+  sel.value = items.some(function(x){return x.key===prev;}) ? prev : (state.selectedKey||items[0].key);
+  state.selectedKey=sel.value;
+}
+function renderSelected(){
+  const x=selectedIntersection();
+  el('selectedEmpty').hidden=!!x;
+  el('selectedBox').hidden=!x;
+  if(!x) return;
+  const fresh = x.lastSignalAt && (Date.now()-x.lastSignalAt<5000) && (state.running||state.demo);
+  const badge=el('freshBadge');
+  if(!x.signals){ badge.textContent='信号未受信'; badge.className='badge'; }
+  else if(state.running||state.demo){ badge.textContent=fresh?'受信中・最新':'更新なし（5秒以上）'; badge.className='badge '+(fresh?'live':'demo'); }
+  else { badge.textContent='停止中・最終受信値'; badge.className='badge'; }
+  el('xTitle').textContent=x.name||'名称未受信の交差点';
+  el('xId').textContent=x.intersectionId||'—';
+  el('xDevice').textContent=x.deviceId||'—';
+  if(x.lat!=null&&x.lon!=null){
+    el('xPos').innerHTML=esc(x.lat.toFixed(6)+', '+x.lon.toFixed(6))+' <a href="https://www.google.com/maps?q='+x.lat+','+x.lon+'" target="_blank" rel="noopener">地図で開く</a>';
+  } else el('xPos').textContent='未受信（Type 1 を待っています）';
+  el('xRssi').textContent=(x.lastRssi!=null?x.lastRssi+' dBm':'—');
+  el('xLast').textContent=fmtTime(x.lastSeen)+'（'+fmtAge(x.lastSeen)+'）';
+  el('xCounts').textContent='Type 0: '+x.counts[0]+' / Type 1: '+x.counts[1]+' / Type 2: '+x.counts[2]+' / その他: '+x.counts.other+' / 合計: '+x.total;
+  // lamps
+  const lamps=el('lamps');
+  const signals=x.signals||[null,null,null,null,null,null];
+  lamps.innerHTML=signals.map(function(s,i){
+    const cls=signalClass(s);
+    const face = s&&s.state===3?'歩':s&&s.state===1?'止':s&&s.state===2?'歩':'—';
+    const rem = s ? (s.remaining==null?'残り値: —':'残り値: '+s.remaining) : '残り値: —';
+    return '<div class="lamp '+cls+(fresh?'':' paused')+'"><div class="dir">信号'+(i+1)+'・'+esc(state.dirs[i]||('方向'+(i+1)))+'</div><div class="face">'+face+'</div><div class="sig">'+esc(signalText(s))+'</div><div class="rem">'+esc(rem)+'</div></div>';
+  }).join('');
+  // history
+  const hist=x.history.slice(-5).reverse();
+  el('historyBox').innerHTML=hist.length? '<table><thead><tr><th>時刻</th><th>信号1〜6</th><th>RSSI</th></tr></thead><tbody>'+hist.map(function(h){
+    return '<tr><td>'+fmtTime(h.t)+'</td><td>'+h.signals.map(function(s){return SIGNAL_LABELS[s]!==undefined?SIGNAL_LABELS[s]:'未知';}).join(' / ')+'</td><td>'+(h.rssi!=null?h.rssi+' dBm':'—')+'</td></tr>';
+  }).join('')+'</tbody></table>' : '<p class="small">まだ信号の履歴がありません。</p>';
+  drawTimeline(x); drawRssi(x);
+}
+function drawTimeline(x){
+  const cv=el('timeline'); const ctx=cv.getContext('2d');
+  const W=cv.width, H=cv.height; ctx.clearRect(0,0,W,H);
+  const now=Date.now(), span=60000, left=now-span;
+  const rows=6, rowH=H/rows;
+  const colors={0:'#98a2b3',1:'#d92d20',2:'#12b76a',3:'#12805c',4:'#d0d5dd'};
+  ctx.font='11px sans-serif';
+  for(let r=0;r<rows;r++){
+    ctx.fillStyle='#667085'; ctx.fillText('信号'+(r+1),4,r*rowH+14);
+    ctx.strokeStyle='#eef2f6'; ctx.beginPath(); ctx.moveTo(0,(r+1)*rowH); ctx.lineTo(W,(r+1)*rowH); ctx.stroke();
+  }
+  const hist=x.history.filter(function(h){return h.t>=left;});
+  const plotLeft=52;
+  function px(t){ return plotLeft+(t-left)/span*(W-plotLeft-8); }
+  for(let r=0;r<rows;r++){
+    let prevT=left, prevState=null;
+    const seq=hist.slice();
+    // 開始時点の状態は、spanより前の最後の履歴から
+    const before=x.history.filter(function(h){return h.t<left;});
+    if(before.length) prevState=before[before.length-1].signals[r];
+    seq.forEach(function(h){
+      if(prevState!=null){
+        ctx.fillStyle=colors[prevState]||'#98a2b3';
+        ctx.fillRect(px(prevT), r*rowH+3, Math.max(1,px(h.t)-px(prevT)), rowH-6);
+      }
+      prevT=h.t; prevState=h.signals[r];
+    });
+    if(prevState!=null){
+      ctx.fillStyle=colors[prevState]||'#98a2b3';
+      ctx.fillRect(px(prevT), r*rowH+3, Math.max(1,px(now)-px(prevT)), rowH-6);
+    }
+  }
+  ctx.fillStyle='#667085';
+  ctx.fillText('-60秒',plotLeft,H-4); ctx.fillText('現在',W-30,H-4);
+}
+function drawRssi(x){
+  const cv=el('rssiChart'); const ctx=cv.getContext('2d');
+  const W=cv.width,H=cv.height; ctx.clearRect(0,0,W,H);
+  const hist=x.rssiHist.slice(-60);
+  if(hist.length<2){ ctx.fillStyle='#667085'; ctx.font='12px sans-serif'; ctx.fillText('RSSIの履歴が2件以上になるとグラフを表示します。',10,20); return; }
+  const min=-95,max=-30;
+  ctx.strokeStyle='#eef2f6';
+  [-90,-70,-50].forEach(function(v){ const y=H-8-(v-min)/(max-min)*(H-16); ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); ctx.fillStyle='#667085'; ctx.font='11px sans-serif'; ctx.fillText(v+' dBm',4,y-3); });
+  ctx.strokeStyle='#175cd3'; ctx.lineWidth=2; ctx.beginPath();
+  hist.forEach(function(p,i){
+    const px=10+i/(59)*(W-20);
+    const py=H-8-(Math.max(min,Math.min(max,p.rssi))-min)/(max-min)*(H-16);
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  });
+  ctx.stroke(); ctx.lineWidth=1;
+  const last=hist[hist.length-1];
+  ctx.fillStyle='#175cd3'; ctx.font='12px sans-serif'; ctx.fillText('最新 '+last.rssi+' dBm（'+fmtTime(last.t)+'）',10,16);
+}
+function renderDevices(){
+  const rows=Array.from(state.devices.values()).sort(function(a,b){return b.lastSeen-a.lastSeen;}).slice(0,30);
+  el('deviceRows').innerHTML=rows.length? rows.map(function(d){
+    return '<tr><td><span class="mono">'+esc(d.id.slice(0,24))+'</span><br>'+esc(d.name||'名称なし')+'</td><td>'+(d.rssi!=null?d.rssi+' dBm':'—')+'</td><td class="mono">'+d.companyIds.map(function(id){return '0x'+id.toString(16).toUpperCase().padStart(4,'0');}).join(', ')+'</td><td>'+d.count+'</td><td>'+fmtTime(d.lastSeen)+'</td></tr>';
+  }).join('') : '<tr><td colspan="5">—</td></tr>';
+}
+function renderEvents(){
+  el('eventLog').innerHTML=state.events.length? state.events.map(function(e){
+    const inner='<span class="mono">'+fmtTime(e.t)+' '+esc(e.deviceName||e.deviceId.slice(0,18))+' RSSI '+(e.rssi!=null?e.rssi:'—')+' '+(e.hasPics?'PICS':'')+'</span>'+(e.hex?'<div class="mono">'+esc(e.hex)+'</div>':'')+(e.parseError?'<div class="small">解析できませんでした: '+esc(e.parseError)+'</div>':'')+(e.parsed&&e.parsed.ok?'<div class="small">Type '+e.parsed.type+' / ID '+esc(e.parsed.intersectionId||'—')+(e.parsed.name?' / '+esc(e.parsed.name):'')+'</div>':'');
+    return '<details><summary>'+esc(e.source)+'・'+(e.hasPics?'PICS':'その他')+'</summary>'+inner+'</details>';
+  }).join('') : '<p class="small">まだイベントがありません。</p>';
+}
+function renderLatest(){
+  const bytes=state.lastPicsBytes, parsed=state.lastPicsInfo;
+  el('latestEmpty').hidden=!!bytes;
+  el('latestBox').hidden=!bytes;
+  if(!bytes||!parsed) return;
+  el('hexBytes').innerHTML=Array.from(bytes).map(function(b,i){
+    const hl = (i===state.parser.typeOffset||i===state.parser.payloadOffset);
+    return '<span class="'+(hl?'hl':'')+'" title="オフセット '+i+'">'+b.toString(16).padStart(2,'0')+'</span>';
+  }).join('');
+  el('latestJson').textContent=JSON.stringify(parsed,null,2);
+  const cands=findCandidates(bytes);
+  el('candidates').innerHTML=cands.length? '<ul>'+cands.map(function(c){return '<li>'+esc(c)+'</li>';}).join('')+'</ul>' : '参考候補は見つかりませんでした。';
+}
+function showScanError(e){
+  const box=el('scanError');
+  const msg=String(e&&e.message?e.message:e);
+  let hint='';
+  if(/not found|NotFoundError/i.test(msg)) hint='デバイスやスキャン対象が見つかりませんでした。Bluetoothがオンか、PICS信号機の近くかを確認してください。';
+  else if(/InvalidStateError/i.test(msg)) hint='Bluetoothの電源・許可ダイアログ・ページの表示状態を確認してください。macOSではChromeへのBluetooth許可が必要です。';
+  else if(/SecurityError|permission/i.test(msg)) hint='許可が拒否されたか、HTTPSで開かれていません。許可ダイアログとURLを確認してください。';
+  else if(/not supported|NotSupportedError/i.test(msg)) hint='このブラウザ・OSではスキャンAPIが未実装の可能性があります。デバイス選択方式を試すか、デモで確認してください。';
+  box.hidden=false;
+  box.innerHTML='<strong>開始できませんでした。</strong> '+esc(msg)+(hint?'<br>'+esc(hint):'')+'<details><summary>ブラウザ詳細</summary><pre>'+esc(String(e&&e.stack?e.stack:e))+'</pre></details>';
+}
+function setRunningUI(running){
+  state.running=running;
+  el('startBtn').disabled=running||state.demo;
+  el('stopBtn').disabled=!running&&!state.demo;
+  const badge=el('modeBadge');
+  if(state.demo){ badge.textContent='デモ実行中'; badge.className='badge demo'; }
+  else if(running){ badge.textContent='受信中'; badge.className='badge live'; }
+  else { badge.textContent='停止中'; badge.className='badge'; }
+}
+function onAdvertisementReceived(event){
+  try{
+    const device=event.device||{};
+    const mData=[];
+    if(event.manufacturerData){
+      event.manufacturerData.forEach(function(view,id){
+        const bytes=new Uint8Array(view.buffer.slice(view.byteOffset, view.byteOffset+view.byteLength));
+        mData.push([id,bytes]);
+      });
+    }
+    const uuids=[];
+    if(event.uuids){ event.uuids.forEach(function(u){uuids.push(String(u));}); }
+    handleAdvertisement({deviceId:String(device.id||'unknown'), deviceName:device.name||'', rssi:event.rssi!=null?event.rssi:null, txPower:event.txPower!=null?event.txPower:null, manufacturerData:mData, serviceUuids:uuids, source:'bluetooth'});
+  }catch(e){ console.warn(e); }
+}
+async function startScan(){
+  el('scanError').hidden=true;
+  const mode=document.querySelector('input[name=mode]:checked').value;
+  const target=document.querySelector('input[name=target]:checked').value;
+  state.mode=mode;
+  if(!navigator.bluetooth){ showScanError(new Error('Web Bluetooth API がありません。Chromeで開いてください。')); return; }
+  try{
+    if(mode==='lescan'){
+      if(typeof navigator.bluetooth.requestLEScan!=='function') throw new Error('requestLEScan がありません。実験的機能フラグを有効にしてChromeを再起動してください。');
+      const scan=await navigator.bluetooth.requestLEScan({acceptAllAdvertisements:true, keepRepeatedDevices:true});
+      state.scan=scan;
+      navigator.bluetooth.addEventListener('advertisementreceived', onAdvertisementReceived);
+      state.scanCheckTimer=setInterval(function(){
+        if(state.scan && !state.scan.active){ stopScan('ブラウザ側でスキャンが終了しました。'); }
+      },1000);
+      el('scanMsg').textContent='全体スキャンを開始しました。PICS信号機の近くでお待ちください。';
+    } else {
+      if(typeof navigator.bluetooth.requestDevice!=='function') throw new Error('requestDevice がありません。');
+      if(typeof BluetoothDevice==='undefined'||typeof BluetoothDevice.prototype.watchAdvertisements!=='function'){
+        // 一部環境ではプロトタイプ判定ができないため、requestDeviceの結果で判断する
+      }
+      let device;
+      if(target==='pics'){
+        device=await navigator.bluetooth.requestDevice({filters:[{manufacturerData:[{companyIdentifier:PICS_COMPANY_ID}]}], optionalManufacturerData:[PICS_COMPANY_ID]});
+      } else {
+        device=await navigator.bluetooth.requestDevice({acceptAllDevices:true, optionalManufacturerData:[PICS_COMPANY_ID]});
+      }
+      state.watchDevice=device;
+      device.addEventListener('advertisementreceived', onAdvertisementReceived);
+      state.watchAbort=new AbortController();
+      await device.watchAdvertisements({signal:state.watchAbort.signal});
+      el('scanMsg').textContent='選択したデバイスの広告を監視しています。広告を送信しない機器では件数は増えません。';
+    }
+    setRunningUI(true);
+  }catch(e){
+    if(e && e.name==='AbortError') return;
+    showScanError(e);
+    setRunningUI(false);
+  }
+}
+function stopScan(reason){
+  try{ if(state.scan&&state.scan.active) state.scan.stop(); }catch(e){}
+  try{ if(state.watchAbort) state.watchAbort.abort(); }catch(e){}
+  try{ if(state.watchDevice) state.watchDevice.removeEventListener('advertisementreceived', onAdvertisementReceived); }catch(e){}
+  try{ navigator.bluetooth.removeEventListener('advertisementreceived', onAdvertisementReceived); }catch(e){}
+  if(state.scanCheckTimer){ clearInterval(state.scanCheckTimer); state.scanCheckTimer=null; }
+  state.scan=null; state.watchDevice=null; state.watchAbort=null;
+  setRunningUI(false);
+  if(reason) el('scanMsg').textContent=reason;
+  renderAll(true);
+}
+/* ---- demo ---- */
+const DEMOS=[
+  {id:'demo-a', idBytes:new Uint8Array([0x10,0x01]), name:'デモ交差点・南北（架空）', lat:35.713000, lon:139.705000, offset:0},
+  {id:'demo-b', idBytes:new Uint8Array([0x10,0x02]), name:'デモ交差点・東西（架空）', lat:35.681000, lon:139.767000, offset:9}
+];
+function phaseAt(elapsed){
+  const t=((elapsed%18)+18)%18;
+  if(t<8) return {state:1, remain:8-t};
+  if(t<14) return {state:3, remain:14-t};
+  return {state:2, remain:18-t};
+}
+function demoTick(){
+  state.demoTick++;
+  const tick=state.demoTick;
+  DEMOS.forEach(function(d){
+    const p1=phaseAt(tick+d.offset);
+    const p2=phaseAt(tick+d.offset+9);
+    const states=[p1.state,p2.state,1,4,0,3];
+    const rems=[Math.ceil(p1.remain),Math.ceil(p2.remain),3,null,2,null];
+    let type, payload;
+    if(tick%6===0){ type=0; const nb=new TextEncoder().encode(d.name); const pb=new Uint8Array(14); pb.set(nb.slice(0,14)); payload=pb; }
+    else if(tick%6===3){ type=1; const lat=encodeInt32BE(Math.round(d.lat*1000000)); const lon=encodeInt32BE(Math.round(d.lon*1000000)); payload=new Uint8Array(8); payload.set(lat,0); payload.set(lon,4); }
+    else { type=2; payload=encodeSignals(states,rems); }
+    const bytes=buildDemoPayload(type,d.idBytes,payload);
+    const rssi=-58+Math.round(Math.sin(tick/3+d.offset)*5);
+    handleAdvertisement({deviceId:d.id, deviceName:'デモBLE路側機', rssi:rssi, txPower:null, manufacturerData:[[PICS_COMPANY_ID,bytes]], serviceUuids:[], source:'demo'});
+  });
+}
+function startDemo(){
+  if(state.demo) return;
+  stopScan();
+  state.demo=true; state.demoTick=0;
+  el('demoBtn').textContent='デモを停止';
+  setRunningUI(false);
+  demoTick();
+  state.demoTimer=setInterval(demoTick,1000);
+  el('scanMsg').textContent='デモを実行中です。架空の交差点データを、実機受信と同じ解析・表示処理で表示しています。';
+  renderAll(true);
+}
+function stopDemo(){
+  if(state.demoTimer) clearInterval(state.demoTimer);
+  state.demoTimer=null; state.demo=false;
+  el('demoBtn').textContent='デモを試す';
+  setRunningUI(false);
+  renderAll(true);
+}
+/* ---- settings / hex test / export ---- */
+function buildDirInputs(){
+  el('dirInputs').innerHTML=state.dirs.map(function(d,i){
+    return '<div><label for="dir'+i+'">信号'+(i+1)+'</label><input type="text" id="dir'+i+'" value="'+esc(d)+'"></div>';
+  }).join('');
+}
+function syncParserInputs(){
+  el('optType').value=state.parser.typeOffset;
+  el('optId').value=state.parser.idOffset;
+  el('optIdLen').value=state.parser.idLength;
+  el('optPayload').value=state.parser.payloadOffset;
+  el('optEndian').value=state.parser.coordEndian;
+  el('optDiv').value=String(state.parser.coordDivisor);
+}
+function applyParser(){
+  state.parser={
+    typeOffset:Math.max(0,parseInt(el('optType').value,10)||0),
+    idOffset:Math.max(0,parseInt(el('optId').value,10)||0),
+    idLength:Math.max(1,Math.min(4,parseInt(el('optIdLen').value,10)||2)),
+    payloadOffset:Math.max(0,parseInt(el('optPayload').value,10)||0),
+    coordEndian:el('optEndian').value,
+    coordDivisor:parseInt(el('optDiv').value,10)||1000000
+  };
+  state.dirs=Array.from({length:6},function(_,i){return el('dir'+i).value||DEFAULT_DIRS[i];});
+  saveSettings();
+  if(state.lastPicsBytes){
+    state.lastPicsInfo=parsePicsPayload(state.lastPicsBytes, state.parser);
+  }
+  el('parserMsg').textContent='設定を適用しました。今後の受信と16進テストに使われます。';
+  renderAll(true);
+}
+function download(filename, text, mime){
+  const blob=new Blob([text],{type:mime||'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+}
+function exportJson(){
+  const data={exportedAt:new Date().toISOString(), parser:state.parser, directions:state.dirs,
+    intersections:Array.from(state.intersections.values()).map(function(x){return {key:x.key, deviceId:x.deviceId, intersectionId:x.intersectionId, name:x.name, lat:x.lat, lon:x.lon, signals:x.signals, counts:x.counts, total:x.total, lastSeen:new Date(x.lastSeen).toISOString(), lastRssi:x.lastRssi, history:x.history};}),
+    events:state.events};
+  download('pics-ble-viewer.json', JSON.stringify(data,null,2));
+}
+function exportCsv(){
+  const rows=[['time','intersection_id','name','device_id','signal1','signal2','signal3','signal4','signal5','signal6','rssi']];
+  state.intersections.forEach(function(x){
+    x.history.forEach(function(h){
+      rows.push([new Date(h.t).toISOString(), x.intersectionId, x.name, x.deviceId].concat(h.signals).concat([h.rssi==null?'':h.rssi]));
+    });
+  });
+  const csv=rows.map(function(r){return r.map(function(v){return '"'+String(v==null?'':v).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
+  download('pics-ble-history.csv', csv, 'text/csv');
+}
+function init(){
+  loadSettings();
+  buildDirInputs(); syncParserInputs();
+  renderEnv();
+  el('startBtn').addEventListener('click', startScan);
+  el('stopBtn').addEventListener('click', function(){ if(state.demo) stopDemo(); stopScan('停止しました。表示は最終受信値のまま残ります。'); });
+  el('demoBtn').addEventListener('click', function(){ if(state.demo) stopDemo(); else startDemo(); });
+  el('clearBtn').addEventListener('click', function(){
+    state.intersections.clear(); state.devices.clear(); state.events=[];
+    state.stats={events:0,pics:0,bad:0}; state.selectedKey=null; state.lastPicsBytes=null; state.lastPicsInfo=null;
+    renderAll(true);
+  });
+  el('exportJsonBtn').addEventListener('click', exportJson);
+  el('exportCsvBtn').addEventListener('click', exportCsv);
+  el('applyParserBtn').addEventListener('click', applyParser);
+  el('resetParserBtn').addEventListener('click', function(){ state.parser=Object.assign({},DEFAULT_PARSER); state.dirs=DEFAULT_DIRS.slice(); saveSettings(); buildDirInputs(); syncParserInputs(); el('parserMsg').textContent='既定に戻しました。'; renderAll(true); });
+  el('debugMode').addEventListener('change', function(e){ state.debug=e.target.checked; renderAll(true); });
+  el('voiceMode').addEventListener('change', function(e){ state.voice=e.target.checked; });
+  el('vibrateMode').addEventListener('change', function(e){ state.vibrate=e.target.checked; });
+  el('rssiMin').addEventListener('input', function(e){ state.rssiMin=parseInt(e.target.value,10); el('rssiMinOut').textContent=state.rssiMin+' dBm'; });
+  document.querySelectorAll('input[name=mode]').forEach(function(r){ r.addEventListener('change', function(){ el('startBtn').textContent = document.querySelector('input[name=mode]:checked').value==='watch' ? 'デバイスを選んで監視' : 'スキャン開始'; }); });
+  el('xSelect').addEventListener('change', function(e){ state.selectedKey=e.target.value; renderSelected(); });
+  el('hexTestBtn').addEventListener('click', function(){
+    const res=parseHexInput(el('hexInput').value);
+    if(!res.ok){ el('hexResult').textContent='入力エラー: '+res.reason; return; }
+    const parsed=parsePicsPayload(res.bytes, state.parser);
+    const cands=findCandidates(res.bytes);
+    el('hexResult').textContent=JSON.stringify(parsed,null,2)+'\n\n参考候補:\n'+(cands.length?cands.join('\n'):'なし');
+  });
+  el('hexSampleBtn').addEventListener('click', function(){
+    const bytes=buildDemoPayload(2,new Uint8Array([0x12,0x34]),encodeSignals([3,1,2,4,0,3],[5,2,4,null,1,null]));
+    el('hexInput').value=toHex(bytes);
+  });
+  el('hexExampleBtn').addEventListener('click', function(){
+    el('hexInput').value='58 01 02 ff 00 00 00 cd 08 49 43 51 ff ff ff ff 00 00 00 00 00 00 00 00';
+  });
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden && (state.running||state.demo)){
+      if(state.demo) stopDemo();
+      stopScan('ページが非表示になったため停止しました。自動では再開しません。');
+    }
+  });
+  window.addEventListener('beforeunload', function(){ stopScan(); stopDemo(); });
+  setInterval(function(){ if(state.intersections.size) renderSelected(); },1000);
+  renderAll(true);
+}
+init();
+</script>
+</body>
+</html>
